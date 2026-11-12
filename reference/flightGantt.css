@@ -1,0 +1,230 @@
+/* Flight Gantt. Everything is scoped under .fg.
+   The --fg-* tokens below hold the PRIZM3 values; point them at your theme tokens if you have them. */
+.fg, .fg-slot {
+  --fg-bg: #121212;
+  --fg-text: rgba(255, 255, 255, 0.87);
+  --fg-muted: rgba(255, 255, 255, 0.6);
+  --fg-label: #A3A3A3;
+  --fg-border-soft: rgba(255, 255, 255, 0.12);
+  --fg-hover: rgba(255, 255, 255, 0.08);
+  --fg-danger: #F35962;
+  --fg-danger-tint: rgba(243, 89, 98, 0.08);
+  --fg-accent: #00DCFF;
+  --fg-selected: #003D54;                /* the clicked sortie's table row */
+  --fg-ink: rgba(0, 0, 0, 0.87);
+  --fg-updated: #00DCFF;                 /* shading for a cell whose value just changed */
+  --fg-grid-header: #2C2C2C;
+  --fg-row-odd: #525252;
+  --fg-row-even: #3D3D3D;
+  --fg-row-hover: #5C5C5C;
+  --fg-tooltip: #424242;
+  --fg-row-h: 52px;
+  --fg-head-h: 53px;
+  --fg-radius: 4px;
+  --fg-elev8: 0px 5px 5px -3px rgba(0,0,0,0.20), 0px 8px 10px 1px rgba(0,0,0,0.14), 0px 3px 14px 2px rgba(0,0,0,0.12);
+}
+.fg {
+  flex: 1;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--fg-bg);
+  color: var(--fg-text);
+  box-sizing: border-box;
+}
+.fg *, .fg *::before, .fg *::after { box-sizing: inherit; }
+.fg--full {
+  position: fixed; inset: 0; z-index: 50;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 20px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Icons: Material Symbols Outlined. Swap .fg-icon for your icon component if you prefer. */
+.fg-icon {
+  font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; font-size: 24px; line-height: 1;
+  display: inline-block; white-space: nowrap; direction: ltr; overflow: hidden; user-select: none;
+  -webkit-font-smoothing: antialiased; font-feature-settings: 'liga'; font-variation-settings: 'FILL' 0;
+}
+.fg-icon-btn {
+  width: 36px; height: 36px; padding: 6px; border: 0; border-radius: 50%; background: transparent; color: #FDFDFD;
+  display: inline-grid; place-items: center; cursor: pointer;
+}
+.fg-icon-btn:hover { background: var(--fg-hover); color: #FDFDFD; }
+.fg-icon-btn:disabled { color: rgba(253, 253, 253, 0.38); background: transparent; cursor: default; }   /* #FDFDFD at 38%, like the stepper chevrons */
+.fg-icon-btn:focus-visible { outline: 2px solid var(--fg-accent); outline-offset: 2px; }
+
+/* Banner with anomaly stepper */
+.fg-top { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.fg-banner {
+  display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 4px 4px 4px 12px;
+  border: 1px solid var(--fg-danger); border-radius: var(--fg-radius); background: var(--fg-danger-tint); color: #FDFDFD;
+}
+.fg-banner > .fg-icon:first-child { color: var(--fg-danger); font-size: 22px; }
+.fg-banner-msg { font-weight: 600; }
+.fg-step { display: flex; align-items: center; gap: 2px; padding-left: 8px; border-left: 1px solid var(--fg-border-soft); }
+.fg-step .fg-icon-btn { width: 32px; height: 32px; padding: 4px; color: #FDFDFD; }
+.fg-step .fg-icon-btn:disabled { color: rgba(253, 253, 253, 0.38); }
+.fg-count { min-width: 64px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fg-banner--ok { border-color: var(--fg-border-soft); background: transparent; }
+.fg-banner--ok > .fg-icon:first-child { color: var(--fg-accent); }
+.fg-zoom { display: flex; gap: 4px; }
+
+/* Everything below the toolbar; hidden when there is nothing to show */
+.fg-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fg-body[hidden] { display: none; }
+
+/* Table (left) + timeline (right) */
+.fg-split { flex: 1; min-height: 0; display: grid; grid-template-columns: 751px minmax(480px, 1fr); overflow-x: auto; }   /* the table pane is 751px; the timeline gets the rest. Pinned: Callsign 230 + Status 145, then the columns scroll sideways */
+.fg-grid { display: flex; flex-direction: column; min-height: 0; border-right: 2px solid #FDFDFD; }   /* white divider between table and timeline */
+.fg-grid-spacer { flex: none; display: flex; align-items: center; height: var(--fg-head-h); background: var(--fg-grid-header); }
+.fg-grid-body { flex: 1; min-height: 0; }
+.fg-empty { padding: 24px 16px; color: var(--fg-muted); }
+
+/* AG Grid (same banding, selection and hidden scrollbars as the other tables; zebra restarts under each parent) */
+.fg-ag { height: 100%; }
+.fg-ag .ag-root-wrapper * { scrollbar-width: none; -ms-overflow-style: none; }   /* vertical scrollbar hidden */
+.fg-ag .ag-root-wrapper *::-webkit-scrollbar { display: none; width: 0; height: 0; }
+/* the vertical scrollbar column is hidden, so it must not take any width (it left a gap before the white divider) */
+.fg-ag .ag-body-vertical-scroll { display: none !important; }
+/* thin sideways scrollbar for the time columns; it overlays the bottom spacer row so grid and timeline scroll ranges stay equal */
+.fg-ag .ag-body-horizontal-scroll { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; height: 18px !important; min-height: 18px !important; }
+.fg-ag .ag-body-horizontal-scroll-viewport, .fg-ag .ag-body-horizontal-scroll-container { height: 18px !important; min-height: 18px !important; max-height: none !important; }
+.fg-ag .ag-body-horizontal-scroll-viewport { scrollbar-width: auto; }   /* no scrollbar-color here: it would switch off the custom styling below in Chrome and Edge */
+.fg-ag .ag-body-horizontal-scroll-viewport::-webkit-scrollbar { display: block; height: 18px; }
+.fg-ag .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-track { background: #2C2C2C; }
+.fg-ag .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb { background: #8A8A8A; border-radius: 9px; border: 4px solid #2C2C2C; min-width: 48px; }
+.fg-ag .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb:hover { background: #BDBDBD; }
+@supports (-moz-appearance: none) { .fg-ag .ag-body-horizontal-scroll-viewport { scrollbar-color: #8A8A8A #2C2C2C; } }   /* Firefox */
+.fg-ag .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-track { background: #2C2C2C; }
+.fg-ag .ag-header { display: none; }
+.fg-ag .ag-row { cursor: default; }
+.fg-ag .ag-row.fg-child { cursor: pointer; }
+.fg-ag .ag-row.fg-parent, .fg-ag .ag-row.fg-cols { background-color: var(--fg-grid-header); color: #FDFDFD; }
+.fg-ag .ag-row.fg-cols { font-weight: 600; }
+.fg-ag .ag-pinned-left-cols-container .ag-row.fg-cols, .fg-ag .ag-pinned-left-cols-container .ag-row { background-clip: padding-box; }
+.fg-ag .ag-row.fg-end { background-color: var(--fg-bg); }
+.fg-ag .ag-row.fg-odd { background-color: var(--fg-row-odd); }
+.fg-ag .ag-row.fg-even { background-color: var(--fg-row-even); }
+.fg-ag .ag-row.fg-odd.ag-row-hover { background-color: var(--fg-row-hover); }
+.fg-ag .ag-row.fg-even.ag-row-hover { background-color: #393939; }
+.fg-ag .ag-row.fg-odd.fg-hover { background-color: var(--fg-row-hover); }   /* same tint, when the pointer is on the timeline row */
+.fg-ag .ag-row.fg-even.fg-hover { background-color: #393939; }
+.fg-ag .ag-cell.fg-dirty { background-color: var(--fg-updated); color: var(--fg-ink); }
+.fg-ag .ag-cell.fg-nodate { color: #6E6E6E; }   /* no time yet: the placeholder ddHHmm */   /* a cell whose value just changed */
+.fg-fw { width: 100%; height: 100%; }
+.fg-fw-parent { padding-left: 8px; font-weight: 600; }
+.fg-fw-parent.fg-nocollapse { padding-left: 15px; }   /* no chevron: the text starts where the cells' text starts */
+.fg-fw-parent.fg-nocollapse button { cursor: default; }
+/* red left border on a flight row that needs attention (the first, pinned columns of that row) */
+.fg-ag .ag-pinned-left-cols-container .ag-row.fg-flag { box-shadow: inset 4px 0 0 var(--fg-danger); }
+.fg-ag .fg-fw-parent.fg-flag { box-shadow: inset 4px 0 0 var(--fg-danger); }   /* a mission with an anomaly in any of its sorties: the red left border on the mission row too, open or collapsed */
+.fg-fw-parent button {
+  display: flex; align-items: center; gap: 6px; width: 100%; height: 100%; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.fg-fw-parent button:focus-visible { outline: 2px solid var(--fg-accent); outline-offset: -2px; }
+.fg-fw-parent .fg-icon { flex: none; font-size: 22px; color: rgba(255, 255, 255, 0.56); }
+.fg-fw-fields { display: flex; gap: 24px; min-width: 0; flex: 0 1 auto; overflow: hidden; font-weight: 400; }
+.fg-fw-field { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 4px; min-width: min-content; flex: 0 1 auto; }   /* a pair never gets narrower than its label: only the value shrinks */
+/* The first three pairs have the same width in every mission row (the widest value sets it: --fg-w-1 .. 3, see FullWidthRow), so they line up when the missions are collapsed.
+   The activity, last, takes what is left and is the first to be cut; if even its label does not fit, it is hidden whole. */
+.fg-fw-field:nth-child(1) { flex: none; grid-template-columns: auto var(--fg-w-1, max-content); }
+.fg-fw-field:nth-child(2) { flex: none; grid-template-columns: auto var(--fg-w-2, max-content); }
+.fg-fw-field:nth-child(3) { flex: none; grid-template-columns: auto var(--fg-w-3, max-content); }
+.fg-fw-field:nth-child(4) { flex-shrink: 12; grid-template-columns: auto minmax(2ch, 1fr); }   /* the activity keeps room for its ellipsis */
+.fg-fw-label { flex: none; color: #A3A3A3; white-space: nowrap; }
+.fg-fw-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #FDFDFD; }
+.fg-fw-count { flex: none; margin-left: auto; padding: 0 16px 0 16px; font-weight: 600; color: #A3A3A3; white-space: nowrap; }   /* always stays, at the right */
+
+.fg-timeline { min-width: 0; min-height: 0; }
+.fg-chart { width: 100%; height: 100%; }
+
+/* Tooltip (hover) and pinned popover (click). 370px wide. */
+.fg-tip {
+  position: fixed; z-index: 70; width: 370px; padding: 16px; border-radius: var(--fg-radius);
+  background: var(--fg-tooltip); color: #FFFFFF; box-shadow: var(--fg-elev8); pointer-events: none;
+}
+.fg-tip--pinned { pointer-events: auto; }
+
+/* ---- Timeline overlay: "Now" line and chip (above bars; the line crosses the hours row, the chip sits on top) ---- */
+.fg-timeline { position: relative; }
+.fg-now-layer { position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; pointer-events: none; z-index: 5; }
+.fg-now-line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #00DCFF; display: none; }
+.fg-now-chip {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 2px 8px; border-radius: 4px;
+  background: #00DCFF; color: #000000; font-size: 14px; font-weight: 600; line-height: 18px; white-space: nowrap;
+}
+
+.fg-now-line.is-edge .fg-now-chip { left: 72px; transform: none; }   /* clear of the first day's date label, which sits at the left edge */
+.fg-now-line.is-flush { background: transparent; }
+.fg-now-line.is-edge-r .fg-now-chip { left: auto; right: 1px; transform: none; }
+
+/* ---- Empty state ---- */
+.fg-empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+.fg-empty-icon { font-size: 154px; color: #2C2C2C; }
+.fg-empty-title { margin-top: 37px; font-size: 28px; line-height: 1.3; color: #7B7B7B; }
+.fg-empty-text { margin-top: 8px; font-size: 14px; line-height: 20px; color: #7B7B7B; }
+
+/* ---- Tooltip: one 3-column grid so Status, ATD/ATA and Field C share the third column ---- */
+.fg-tip { width: 460px; }   /* 3 x 132px columns + 2 x 16px gaps + 2 x 16px padding */
+.fg-tip-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 132px)); column-gap: 16px; row-gap: 4px; font-size: 14px; line-height: 19.5px; }
+.fg-tip-call { grid-column: 1 / 3; }
+.fg-tip-status { grid-column: 3; color: #FFFFFF; white-space: nowrap; }   /* the same white as the callsign next to it */
+.fg-tip-status--alert .fg-tip-status-label { color: #FFFFFF; }   /* red outline on the bar: "Status" white... */
+.fg-tip-status--alert .fg-tip-status-value { color: #F35962; }   /* ...and ": value" red */
+.fg-tip-rule { grid-column: 1 / -1; margin: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.2); }
+.fg-tip-pair, .fg-tip-value, .fg-tip-field-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fg-tip-label { font-weight: 600; color: var(--fg-label); }       /* fields semibold... */
+.fg-tip-pair .fg-tip-label { margin-right: 8px; }
+.fg-tip-value, .fg-tip-pair { font-weight: 400; }                  /* ...values regular */
+.fg-tip-field-label { margin-top: 8px; }
+.fg-tip-changed { color: #00DCFF; }                               /* updated value, until acknowledged */
+
+.fg-chart { position: relative; z-index: 1; }
+
+/* the sheet's rows are 52px like the table and chart rows (ROW_H); the dialog is outside the scope of the --fg tokens, hence the literal */
+
+/* AnyChart draws its own scrollbars at 25% opacity (they fade in on hover); keep them fully visible like the AG Grid ones */
+.fg-chart [fill="#2c2c2d" i], .fg-chart [fill="#8a8a8b" i] { opacity: 1 !important; fill-opacity: 1 !important; }
+.fg-chart [stroke="#2c2c2d" i] { stroke-opacity: 1 !important; }   /* the inset stroke that slims the thumb to 10px must be opaque too, or the thumb looks 18px thick */   /* "i": AnyChart writes the colours in upper case */
+
+/* Timeline row highlight while the pointer is on the matching table row (AG Grid variants) */
+.fg-rowhover { position: absolute; left: 0; right: 0; height: var(--fg-row-h); display: none; background: rgba(255, 255, 255, 0.06); pointer-events: none; z-index: 4; }
+.fg-ag .ag-row.fg-selected { background-color: var(--fg-selected) !important; }   /* the clicked sortie: beats the zebra and the hover colours */
+
+
+.fg-h6 { margin: 0; font-size: 16px; font-weight: 600; line-height: 22.4px; }   /* h6: Open Sans 16 / 22.4 / semibold */
+
+/* ---- Flying count ---- */
+.fg-status { display: flex; align-items: center; gap: 12px; }
+.fg-flying { display: flex; align-items: center; gap: 8px; padding: 0 16px; font-size: 16px; font-weight: 600; line-height: normal; color: #FDFDFD; white-space: nowrap; }   /* in the table's header row: Sorties  6 IS • 6 FP • 6 LD • 6 CL */
+.fg-flying > span:not(.fg-flying-label) { display: inline-flex; align-items: center; gap: 8px; }
+.fg-flying-label { margin-right: 4px; font-weight: 400; color: #A3A3A3; }
+.fg-flying-dot { color: #898989; }
+.fg-slot { display: flex; align-items: center; gap: 12px; }   /* controls rendered into a host slot keep the component's tokens */
+
+/* Hint on hover or keyboard focus (same look as the bar tooltip: #424242, white text, 8px radius, elevation 8) */
+.fg-hint { position: relative; display: inline-flex; }
+.fg-hint::after {
+  content: attr(data-hint); position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 90;
+  padding: 8px 12px; border-radius: var(--fg-radius); background: var(--fg-tooltip); color: #FFFFFF; box-shadow: var(--fg-elev8);
+  font-size: 14px; font-weight: 400; line-height: 19.6px; white-space: nowrap; pointer-events: none; opacity: 0; visibility: hidden;
+}
+.fg-hint:hover::after, .fg-hint:has(:focus-visible)::after { opacity: 1; visibility: visible; }   /* keyboard focus only: a mouse click leaves focus on the button */
+
+/* Bar labels and red chips: a layer above the chart, under the "Now" line (see _syncLabels) */
+.fg-labels { position: absolute; left: 0; right: 10px; bottom: 18px; overflow: hidden; pointer-events: none; z-index: 3; }
+.fg-lab { position: absolute; transform: translateY(-50%); white-space: nowrap; font-size: 14px; font-weight: 600; line-height: 19.6px; color: #FDFDFD; }
+.fg-lab-chip {
+  position: absolute; transform: translateY(-50%); white-space: nowrap; padding: 1px 8px; border-radius: 8px;
+  background: rgba(123, 2, 10, 0.7); color: #FFFFFF; font-size: 11px; font-weight: 600; line-height: 16px;
+}
+.fg-lab--lane { font-size: 12px; line-height: 16px; }
+/* A callsign with no schedule: its rows are shaded with the fill of a closed bar (the bar fill at 60%); the text stays on the callsign's own row */
+.fg-ns { position: absolute; left: 0; right: 0; background: rgba(44, 44, 44, 0.6); }
+.fg-ns > span { position: absolute; left: 16px; top: 25.5px; transform: translateY(-50%); white-space: nowrap; font-size: 14px; font-weight: 600; line-height: 19.6px; color: rgba(253, 253, 253, 0.6); }
+.fg-stat-pill { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 8px; background: rgba(123, 2, 10, 0.7); color: #FFFFFF; font-size: 11px; font-weight: 600; line-height: 16px; vertical-align: middle; position: relative; top: -1px; }   /* the chip inside a collapsed mission's text; top: -1px puts its centre on the text's (measured: it sat 0.9px low) */
+.fg-pill { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: rgba(123, 2, 10, 0.7); color: #FFFFFF; font-size: 11px; font-weight: 600; line-height: 14px; vertical-align: middle; }
+
+/* Time labels of the scale: drawn over the header, each at its grid line (see _syncHeader) */
+.fg-hdr { position: absolute; top: 0; left: 0; right: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+.fg-hl { position: absolute; top: var(--hl-top, 28px); height: var(--hl-h, 16px); white-space: nowrap; font-size: 13px; line-height: var(--hl-h, 16px); color: #FDFDFD; }
