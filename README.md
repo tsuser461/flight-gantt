@@ -1,10 +1,33 @@
 # Flights – Gantt: a timeline next to your AG Grid table
 
-Developer handoff for the **Flights – Gantt V3** prototype.
+Developer handoff for the **Flights – Gantt V3** prototype: a timeline next to an AG Grid table, with code you can install and run.
 
 - Prototype (interactive): https://claude.ai/artifact/SFDumZx4bKo3xyJbYo7jcV
-- Open **Bar scenarios** in the prototype's top navigation. It draws every case with the real renderer and says what is true (If), what is drawn (Then) and what the label shows (Label). Use it as the visual spec and as your QA list. It exists **in the prototype only**: it is not in `reference/` and you do not need to build it.
-- `reference/` holds the prototype's source (without the Bar scenarios dialog and the prototype's own top navigation). It is **reference code to adapt, not a package to install**.
+- Open **Bar scenarios** in the prototype's top navigation. It draws every case with the real renderer and says what is true (If), what is drawn (Then) and what the label shows (Label). Use it as the visual spec and as your QA list. It exists **in the Claude prototype only**: it is not in this repo and you do not need to build it.
+- This repo is a **runnable app** (Vite + React). `src/flight-gantt/` is the component code, the part you adapt into your app. `src/demo/` is a stand-in host page (top navigation, page header, filters) so you can try it. See "Try it" below.
+
+---
+
+## Try it (5 minutes)
+
+You need Node 18 or newer (tested with Node 22).
+
+```bash
+npm install
+npm run dev        # opens on http://localhost:5173
+```
+
+Other scripts: `npm run build` (production build into `dist/`) and `npm run preview` (serve that build).
+
+**What you will see.** The Flights page with the 13 sample callsigns from `src/flight-gantt/sampleData.js`. The top bar has **prototype controls**: _Version_ (with or without the collapse view) and _Date range example_ (1 day or 2 days). "Now" is fixed at 21 Nov 2026 22:30 UTC in the sample data so that every state (Past ETD, Past ETA, Not scheduled and so on) is always on screen. The buttons in the page header (Update, Abort, Manage, Close, Create) are not wired: they only show a message.
+
+**Where to start reading.** `src/flight-gantt/flightRules.js` holds the rules and has no React or AnyChart in it. Then `FlightGantt.jsx`, which puts the grid and the timeline together.
+
+**Things you will notice**
+
+- AnyChart draws a **trial watermark** until it has a licence key. Put yours in a `.env` file (copy `.env.example`): `VITE_ANYCHART_LICENSE_KEY=your-key`.
+- Fonts (Open Sans, Material Symbols Outlined) load from Google Fonts in `index.html`, so the first run needs internet. Swap them for your own and replace `src/flight-gantt/Icon.jsx` with your icon component.
+- `npm run build` prints a warning about `eval` in `anychart-bundle.min.js`. That is AnyChart's own bundle, not our code. It is about 2.5 MB and is split into its own chunk (see `vite.config.js`).
 
 ---
 
@@ -32,13 +55,13 @@ You already have an AG Grid table. We keep it. We put a **timeline** (an AnyChar
 
 Everything else depends on it.
 
-| Rule | Value | Where |
-|---|---|---|
-| Row height, table **and** timeline | **52px** | `ROW_H` in `flightRules.js`; AG Grid `rowHeight`; the timeline draws 51px + AnyChart's 1px line |
-| Row order | identical in both | both are built from `buildRows()` |
-| Row types | `parent` (mission), `cols` (column names), `child` (sortie), `end` (spacer) | `buildRows()` |
-| Vertical scroll | AG Grid is the master | `onBodyScroll` → `timeline.scrollTo(top)` |
-| Header | table header spacer 53px, timeline header 52px + 1px divider | `--fg-head-h`, `HEADER_H` |
+| Rule                               | Value                                                                       | Where                                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Row height, table **and** timeline | **52px**                                                                    | `ROW_H` in `flightRules.js`; AG Grid `rowHeight`; the timeline draws 51px + AnyChart's 1px line |
+| Row order                          | identical in both                                                           | both are built from `buildRows()`                                                               |
+| Row types                          | `parent` (mission), `cols` (column names), `child` (sortie), `end` (spacer) | `buildRows()`                                                                                   |
+| Vertical scroll                    | AG Grid is the master                                                       | `onBodyScroll` → `timeline.scrollTo(top)`                                                       |
+| Header                             | table header spacer 53px, timeline header 52px + 1px divider                | `--fg-head-h`, `HEADER_H`                                                                       |
 
 Why it matters: AnyChart's Gantt can only draw **uniform row heights**, so the table must be uniform too. Things that break the contract:
 
@@ -48,25 +71,6 @@ Why it matters: AnyChart's Gantt can only draw **uniform row heights**, so the t
 
 ---
 
-## 3. Data model
-
-Pure data, all times are **epoch milliseconds, UTC**. Full comments are at the top of `reference/flightRules.js`.
-
-```js
-parents = [{                        // a mission ("callsign" in the UI)
-  id, name, model,                  // model: HELI | TG | UAV | FTR
-  info: { id, code, activityType }, // shown in the mission row
-  anchor?: ms,                      // only when NO sortie has any time (see "Not scheduled")
-  children: [{                      // a sortie
-    id: 'SOUR01', code: 'IS' | 'FP' | 'LD' | 'IA' | 'CL',
-    model, tail,
-    etd, eta, atd?, ata?,           // planned and actual times
-    changed?: ['eta'],              // fields updated since last refresh (cell shading + tooltip tint)
-    fieldA, fieldB, fieldC          // extra tooltip values: point these at your real fields
-  }]
-}]
-```
-
 Derived, never stored: the mission's **callsign** (what its sorties' callsigns share, minus the number: SOUR01–SOUR04 → `SOUR`), the counts per status, anomalies.
 
 `model` and `tail` stay in the data but are **not shown**: the table has no A/C Model or Tail No column.
@@ -74,37 +78,47 @@ Derived, never stored: the mission's **callsign** (what its sorties' callsigns s
 Adapter sketch (your API → this shape):
 
 ```js
-const toParents = (missions) => missions.map((m) => ({
-  id: m.id, name: m.name, model: m.model,
-  info: { id: m.externalId, code: m.code, activityType: m.activityType },
-  anchor: m.sorties.every((s) => !s.etd && !s.eta && !s.atd && !s.ata) ? Date.parse(m.plannedDate) : undefined,
-  children: m.sorties.map((s) => ({
-    id: s.callsign, code: s.status, model: s.aircraftModel, tail: s.tailNo,
-    etd: s.etd && Date.parse(s.etd), eta: s.eta && Date.parse(s.eta),
-    atd: s.atd && Date.parse(s.atd), ata: s.ata && Date.parse(s.ata),
-  })),
-}));
+const toParents = (missions) =>
+  missions.map((m) => ({
+    id: m.id,
+    name: m.name,
+    model: m.model,
+    info: { id: m.externalId, code: m.code, activityType: m.activityType },
+    anchor: m.sorties.every((s) => !s.etd && !s.eta && !s.atd && !s.ata)
+      ? Date.parse(m.plannedDate)
+      : undefined,
+    children: m.sorties.map((s) => ({
+      id: s.callsign,
+      code: s.status,
+      model: s.aircraftModel,
+      tail: s.tailNo,
+      etd: s.etd && Date.parse(s.etd),
+      eta: s.eta && Date.parse(s.eta),
+      atd: s.atd && Date.parse(s.atd),
+      ata: s.ata && Date.parse(s.ata),
+    })),
+  }));
 ```
 
 `now` is passed in (epoch ms). The prototype fixes it; in production tick it (for example once a minute), because "Past ETD", "Past ETA" and the Now line depend on it.
 
 ---
 
-## 4. What is drawn (the spec)
+## 3. What is drawn (the spec)
 
-### 4.1 One sortie (expanded row)
+### 3.1 One sortie (expanded row)
 
-| Status | Drawn |
-|---|---|
-| **IS** Issued | **No bar.** Only the estimate (ETD→ETA) as a 4px strip along the bottom of the bar area. The label sits above it. |
-| **FP** Flight in progress | Bar from ATD to **now**. The estimate strip is drawn under it where it differs from the bar. |
-| **LD** Landed | Bar from ATD to ATA. Strip under it where the estimate differs. |
-| **CL** Closed | Same as LD, faded (60% opacity). |
-| **IA** Aborted | **No bar.** The estimate strip, faded (60%). Faded label. |
+| Status                    | Drawn                                                                                                             |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **IS** Issued             | **No bar.** Only the estimate (ETD→ETA) as a 4px strip along the bottom of the bar area. The label sits above it. |
+| **FP** Flight in progress | Bar from ATD to **now**. The estimate strip is drawn under it where it differs from the bar.                      |
+| **LD** Landed             | Bar from ATD to ATA. Strip under it where the estimate differs.                                                   |
+| **CL** Closed             | Same as LD, faded (60% opacity).                                                                                  |
+| **IA** Aborted            | **No bar.** The estimate strip, faded (60%). Faded label.                                                         |
 
 Label: `Callsign • Status` (a cyan dot follows when a value was updated). It starts 16px inside the bar or strip, and if the bar continues past the window's left edge the label stays pinned at the edge and slides away with the bar's end. **A label is never truncated**: if it is longer than its bar it just continues past the end.
 
-### 4.2 Attention ("Past ETD", "Past ETA")
+### 3.2 Attention ("Past ETD", "Past ETA")
 
 `alertOf(sortie, now)` in `flightRules.js`:
 
@@ -118,18 +132,18 @@ Drawn as: a **red chip** with that text, at the **left, directly above the label
 
 **Tooltip card.** A click on a bar or a table row pins it. It sits just below its bar (above it when there is no room), centred on the visible part of the bar, and **follows the bar** while you scroll, pan or zoom. When the bar scrolls out of view the card goes with it: it slides out under the timeline header, or off the bottom of the chart, and it is **still there when you scroll back**, as long as you have not selected another sortie. It closes on a click on empty space, on Escape, on a second click on the same sortie, and when its mission is collapsed. The pinned card is clickable (so its text can be selected) and therefore also catches clicks: a bar under it can be reached from its table row or after scrolling. See `FlightTip` in `FlightGantt.jsx` and `getBarRect` in `GanttTimeline.js`.
 
-### 4.3 Collapsed mission (the same for every model)
+### 3.3 Collapsed mission (the same for every model)
 
 `aggregate()` in `flightRules.js`:
 
-- **Actual bar:** earliest ATD → latest ATA across all its sorties (a sortie still flying counts up to *now*; gaps between sorties are covered). No bar if nothing has departed.
+- **Actual bar:** earliest ATD → latest ATA across all its sorties (a sortie still flying counts up to _now_; gaps between sorties are covered). No bar if nothing has departed.
 - **Estimate strip:** earliest ETD → latest ETA across all its sorties.
 - **Text on the bar:** how many sorties per status, in the order IS, FP, LD, CL, IA, for example `2 IS • 1 FP • 3 LD`. It starts at the left of the bar like any label and is never truncated.
 - **Flagged sorties:** the totals stay and a small red chip follows the status with how many are flagged, for example `5 IS [3 Past ETD] • 4 FP [2 Past ETA]`.
 - With no actual bar the text sits above the estimate strip.
 - Clicking the bar opens the mission.
 
-### 4.4 Not scheduled
+### 3.4 Not scheduled
 
 A mission **none of whose sorties has any of the four times**. It still appears in the date range through `anchor`.
 
@@ -137,41 +151,29 @@ A mission **none of whose sorties has any of the four times**. It still appears 
 - Text "Not scheduled" stays on the mission's own row. No hover, no click.
 - Table cells with no time show `ddHHmm` in `#6E6E6E`.
 
-> **Not handled yet:** a sortie that has *some* but not all of its times (for example ETD but no ETA). The date-range filter currently drops it. Needs a product rule (see section 9).
-
-### 4.5 Date range, view and zoom
-
-- The range is **at most 48 hours** (the component cuts longer ones to 48h from the start; validating the date pickers is the host page's job).
-- The view opens on the **first 12 hours** of the range. Zoom buttons step **12 → 24 → 36 → 48h**, capped at the range length. Ctrl/Cmd + wheel and pinch zoom smoothly (min 12h). Shift + wheel, sideways swipe, drag and the scrollbar pan.
-- Grid lines are hourly at 12h and every 3 hours at 24h and above. The time labels are drawn by us (so they slide out instead of being pinned), and thin themselves out on narrow screens.
-- **Now** line: 2px cyan with a "Now" chip. At the very edge only the chip shows.
-- Mission row: `CALLSIGN  ID  CODE  ACTIVITY TYPE` label/value pairs (label `#A3A3A3`, value `#FDFDFD`, 24px between pairs, 4px inside a pair) and `shown/total sorties` on the right. The first three pairs line up from row to row. Values truncate, the callsign never.
-- Table header cell: counts per status for the visible sorties, `17 IS • 6 FP • 11 LD • 1 CL` (no IA).
-- Table columns: Callsign (230px) and Status (145px) pinned left, then ETD, ETA, ATD, ATA (145px each) that scroll sideways. Callsign, Status and the time cells are all there is: no A/C Model or Tail No.
-
-### 4.6 Design tokens
+## 4. Design Tokens
 
 Literal values are required in `GanttTimeline.js` (`TOKENS`) because AnyChart draws SVG and cannot read CSS variables. The CSS ones are the `--fg-*` variables at the top of `flightGantt.css`: **point them at your theme tokens**.
 
-| What | Value |
-|---|---|
-| Row / page background | `#121212` |
-| Bar fill / border | `#2C2C2C` / `#525252` (1px) |
-| Estimate strip | `#525252`, 4px high |
-| Faded (closed, aborted, not scheduled) | 60% opacity |
-| Attention red | `#F35962` (chip fill `#7B020A` at 70%) |
-| Now, updated dot | `#00DCFF` |
-| Selected bar (fill only; the border stays) and its table row | `#003D54` |
-| Selected estimate strip (under a flown bar, or an issued or aborted sortie) | `#00799E` |
-| Table header, mission row, column-header row | `#2C2C2C` |
-| Zebra rows (odd / even) | `#525252` / `#3D3D3D` |
-| Not scheduled fill | `#2C2C2C` at 60%; text white at 60% |
-| Bar label | 14px / 600, `#FDFDFD`, 19.6px line |
-| Chip | 11px / 600, 16px line, padding 1px 8px, fully rounded |
-| Timeline header labels | 13px |
-| Table text | 16px, Open Sans |
-| Bar height | 35px (8px above and below inside the 52px row) |
-| Minimum bar width | 8px (a short flight stays visible and clickable) |
+| What                                                                        | Value                                                 |
+| --------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Row / page background                                                       | `#121212`                                             |
+| Bar fill / border                                                           | `#2C2C2C` / `#525252` (1px)                           |
+| Estimate strip                                                              | `#525252`, 4px high                                   |
+| Faded (closed, aborted, not scheduled)                                      | 60% opacity                                           |
+| Attention red                                                               | `#F35962` (chip fill `#7B020A` at 70%)                |
+| Now, updated dot                                                            | `#00DCFF`                                             |
+| Selected bar (fill only; the border stays) and its table row                | `#003D54`                                             |
+| Selected estimate strip (under a flown bar, or an issued or aborted sortie) | `#00799E`                                             |
+| Table header, mission row, column-header row                                | `#2C2C2C`                                             |
+| Zebra rows (odd / even)                                                     | `#525252` / `#3D3D3D`                                 |
+| Not scheduled fill                                                          | `#2C2C2C` at 60%; text white at 60%                   |
+| Bar label                                                                   | 14px / 600, `#FDFDFD`, 19.6px line                    |
+| Chip                                                                        | 11px / 600, 16px line, padding 1px 8px, fully rounded |
+| Timeline header labels                                                      | 13px                                                  |
+| Table text                                                                  | 16px, Open Sans                                       |
+| Bar height                                                                  | 35px (8px above and below inside the 52px row)        |
+| Minimum bar width                                                           | 8px (a short flight stays visible and clickable)      |
 
 ---
 
@@ -180,7 +182,7 @@ Literal values are required in `GanttTimeline.js` (`TOKENS`) because AnyChart dr
 ### Prerequisites
 
 - React 18, `ag-grid-community` and `ag-grid-react` **33.x** (the prototype uses 33.3.2).
-- **AnyChart 8.14.1** with the **Gantt module** (`npm i anychart`, use the full bundle). It needs a **licence**; the prototype runs the trial, which draws a watermark. Confirm licensing before building on it. If you cannot use AnyChart, see "Replacing AnyChart" below.
+- **AnyChart 8.14.1** with the **Gantt module** (already in this repo's `package.json`; the npm package is the full bundle). It needs a **licence**; the prototype runs the trial, which draws a watermark. Confirm licensing before building on it. If you cannot use AnyChart, see "Replacing AnyChart" below.
 - Open Sans and Material Symbols Outlined (or swap `Icon.jsx` for your icons).
 
 ### Steps
@@ -211,8 +213,12 @@ If your table already has columns, keep them: only the **row height, row order, 
 **3. Build the row list once, feed both.**
 
 ```js
-const visible = filterByRange(parents, [rangeStart, rangeEnd], now);          // drops sorties outside the range
-const rows = buildRows(visible, { query, collapsed /* Set of mission ids */, now });
+const visible = filterByRange(parents, [rangeStart, rangeEnd], now); // drops sorties outside the range
+const rows = buildRows(visible, {
+  query,
+  collapsed /* Set of mission ids */,
+  now,
+});
 // rows -> AG Grid rowData (map each row to a plain object with a stable `rid`)
 // rows -> timeline.render({ rows, range, now })
 ```
@@ -224,12 +230,19 @@ Collapsing a mission = add its id to `collapsed` and rebuild. There is no AG Gri
 ```jsx
 useLayoutEffect(() => {
   const tl = new GanttTimeline(chartEl.current, {
-    onBarClick:   (flight, ev) => (flight.group ? toggleMission(flight.id.slice(2)) : openTooltip(flight, ev)),
+    onBarClick: (flight, ev) =>
+      flight.group
+        ? toggleMission(flight.id.slice(2))
+        : openTooltip(flight, ev),
     onEmptyClick: () => closeTooltip(),
-    onRowHover:   (id) => setHoverId(id),
-    onViewSpan:   (ms, [lo, hi]) => setSpan({ ms, lo, hi }),      // enable/disable the zoom buttons
-    onVerticalWheel: (dy) => { /* scroll the grid body by dy, return where it ended up */ },
-    onChartScroll:   (y) => { /* the timeline's own scrollbar was dragged: scroll the grid */ },
+    onRowHover: (id) => setHoverId(id),
+    onViewSpan: (ms, [lo, hi]) => setSpan({ ms, lo, hi }), // enable/disable the zoom buttons
+    onVerticalWheel: (dy) => {
+      /* scroll the grid body by dy, return where it ended up */
+    },
+    onChartScroll: (y) => {
+      /* the timeline's own scrollbar was dragged: scroll the grid */
+    },
   });
   tlRef.current = tl;
   return () => tl.destroy();
@@ -237,7 +250,7 @@ useLayoutEffect(() => {
 
 useLayoutEffect(() => {
   tlRef.current.render({ rows, range: [rangeStart, rangeEnd], now });
-  tlRef.current.scrollTo(gridScrollTop(), true);            // AG Grid owns vertical scroll
+  tlRef.current.scrollTo(gridScrollTop(), true); // AG Grid owns vertical scroll
 }, [rows, rangeStart, rangeEnd, now]);
 ```
 
@@ -257,10 +270,34 @@ The contract is renderer-agnostic. Anything that can draw rows of a fixed pitch 
 
 ---
 
-## 6. File map (`reference/`)
+## 6. File map
 
-| File | What it is | Keep or adapt |
-|---|---|---|
+```
+package.json, vite.config.js, index.html   the Vite app (versions are pinned in package-lock.json)
+.env.example                               where the AnyChart licence key goes
+src/
+  main.jsx                                 mounts the page; sets the AnyChart licence key
+  demo/
+    App.jsx                                stand-in host page: top navigation, page header, filters, prototype controls
+    demo.css                               styles of that host page
+  flight-gantt/                            <- the component: this is what you adapt into your app
+    flightRules.js  FlightGantt.jsx  FlightGrid.jsx  GanttTimeline.js
+    flightGantt.css  Icon.jsx  sampleData.js
+```
+
+| File in `src/flight-gantt/` | What it is                                                                                                                     | Keep or adapt                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `flightRules.js`            | Pure rules: statuses, `alertOf`, `aggregate`, `buildRows`, `filterByRange`, counts, anomalies, `ROW_H`. No React, no AnyChart. | **Keep** (port to TypeScript if you like) |
+| `GanttTimeline.js`          | The timeline: AnyChart wrapper, bar and strip drawing, label and chip overlay, header labels, zoom and pan, Now line.          | **Adapt**                                 |
+| `FlightGantt.jsx`           | The page component: puts grid and timeline together, scroll sync, tooltip, anomalies banner, toolbar, `collapsible` prop.      | **Adapt** to your page                    |
+| `FlightGrid.jsx`            | AG Grid setup: theme, columns, full-width mission row, row classes.                                                            | **Merge** into your existing grid         |
+| `flightGantt.css`           | Tokens and styles, scoped under `.fg`.                                                                                         | **Adapt**                                 |
+| `Icon.jsx`                  | Material Symbols wrapper.                                                                                                      | Swap for yours                            |
+| `sampleData.js`             | The 13 sample callsigns that produce every case, and the fixed "now".                                                          | Tests / Storybook                         |
+
+`src/demo/` (the top navigation placeholder, the page header, the filters, the version switch and the date-range examples) is the **host page**, not part of the component: replace it with your own page. The `collapsible` prop (a version with no collapse view) is a prototype switch: ask product whether it ships.
+
+---|---|---|
 | `flightRules.js` | Pure rules: statuses, `alertOf`, `aggregate`, `buildRows`, `filterByRange`, counts, anomalies, `ROW_H`. No React, no AnyChart. | **Keep** (port to TypeScript if you like) |
 | `GanttTimeline.js` | The timeline: AnyChart wrapper, bar and strip drawing, label and chip overlay, header labels, zoom and pan, Now line. | **Adapt** |
 | `FlightGantt.jsx` | The page component: puts grid and timeline together, scroll sync, tooltip, anomalies banner, toolbar, `collapsible` prop. | **Adapt** to your page |
@@ -273,25 +310,7 @@ The prototype's top navigation (version switch, date-range examples, Bar scenari
 
 ---
 
-## 7. Behaviours to check (QA list)
-
-- Row pitch is exactly 52px in table and timeline, expanded and collapsed, after scrolling.
-- Each bar label's centre is within about half a pixel of its table row's centre.
-- Open a mission, collapse it, collapse/expand all: bars, strips, texts and the Not scheduled shading follow.
-- Search: counts show `shown/total sorties`; the shading and chips follow the filtered rows.
-- Date range: sorties outside it disappear; a Not scheduled mission follows its `anchor`.
-- Zoom 12 → 24 → 36 → 48h and back; zoom-out disables at the range length; Ctrl/Cmd + wheel stops at 12h.
-- Chips: left edge equals the label's left edge; red strip on an IS, red border and edge on an FP.
-- Selecting (by a bar or by a table row): the bar's fill and the table row turn `#003D54` (an anomaly bar keeps its red border), the estimate strip turns `#00799E`, and clicking empty space clears all of it.
-- Tooltip card: it follows its bar while scrolling, goes out of view with it (clipped under the header, hidden off the bottom) and is back in place when you scroll back; clicking another sortie moves it.
-- A label longer than its bar continues past the end, in the table and collapsed.
-- Time cells with no value show `ddHHmm` in `#6E6E6E`.
-- Anomaly banner and stepper jump to each flagged sortie (the mission opens).
-- Keyboard: Escape closes the tooltip.
-
----
-
-## 8. Gotchas we hit
+## 7. Gotchas we hit
 
 - **AnyChart rows are uniform.** A per-item height only makes a bar taller, never the row. Don't try variable row heights in the table.
 - **Colours must be literals** in the timeline code (SVG cannot read CSS variables).
@@ -300,15 +319,3 @@ The prototype's top navigation (version switch, date-range examples, Bar scenari
 - **`animateRows`** must be off, otherwise rows move while the timeline jumps.
 - **Register the custom shapes without `fillName` / `strokeName`, and set every fill yourself in the drawer.** Otherwise AnyChart restyles them with its own hover and selected colours (orange by default) when a row is clicked. `GanttTimeline.js` does this and sets each strip's fill explicitly.
 - **A full-width row's width** is the table pane's width, so the mission row's four pairs need about 800px to show without truncating; the prototype's pane is 751px (`grid-template-columns` in `.fg-split`).
-
----
-
-## 9. Open questions for the team
-
-1. **AnyChart licence** (watermark in the prototype), or an alternative renderer?
-2. **Partial times** (some of ETD/ETA/ATD/ATA present, not all): needs a rule. Today the range filter drops them.
-3. **Scale:** tested with about 50 rows. We pass every row to the timeline and AnyChart draws the visible ones; confirm with real volumes before committing.
-4. **`now`:** the prototype fixes it. How often do you want it ticked, and should anomalies refresh with it?
-5. **Time zone:** everything is UTC. Is that what users expect?
-6. **Collapse:** keep both "with collapse" and "without collapse", or ship only one?
-7. **Real fields:** `fieldA/B/C` are placeholders for the tooltip.
